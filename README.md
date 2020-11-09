@@ -1,4 +1,3 @@
-# TCP chat - RC assignment
+# TCP chat
 
-Development of TCP client and server for the Computer Networking class.
-
+A TCP chat application written in Java for the Computer Networking class assignment.
