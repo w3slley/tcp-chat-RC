@@ -5,7 +5,7 @@ import java.nio.channels.*;
 import java.nio.charset.*;
 import java.util.*;
 
-public class Server
+public class ChatServer
 {
     // A pre-allocated buffer for the received data
     static private final ByteBuffer buffer = ByteBuffer.allocate( 16384 );
@@ -112,15 +112,38 @@ public class Server
 	// If no data, close the connection
 	if (buffer.limit()==0)
 	    return false;
-	/*//loop through buffer and use the method SocketChannel.write() to send back buffer to connection who sent it.
-	  while(buffer.hasRemaining()){
-	     sc.write(buffer);
-	  }*/
+	//loop through buffer and use the method SocketChannel.write() to send back buffer to connection who sent it.
+	String message = decoder.decode(buffer).toString();
+	String[] ans = message.split(" ");
+	if(ans[0].equals("/nick")){
+	    //mudar estado do cliente com nome  ans[1]
+	    //enviar OK
+	    //Improve this later
+	    String response = "OK \n";
+	    buffer.clear();
+	    buffer.put(response.getBytes());
+	    buffer.flip();
+
+	    while(buffer.hasRemaining()) {
+		sc.write(buffer);
+	    }
+	}
+	else if(ans[0].equals("/join")){
+	    //ans[1] is the name of the room.
+	}
+	else if(ans[0].equals("/bye")){
+	    
+	}
+        
 	//loop through keys and send buffer only to active connections
-	Iterator<SelectionKey> it = keys.iterator();
+	/*Iterator<SelectionKey> it = keys.iterator();
 	while(it.hasNext()){
 	    SelectionKey key = it.next();
 	    if(!key.isAcceptable()){//only if the connection is not being established for the first time
+		// Decode and print the message to stdout
+		String message = decoder.decode(buffer).toString();
+		String[] ans = message.split(" ");
+		System.out.print(Arrays.toString(ans));
 		SocketChannel SCothers = (SocketChannel) key.channel();
 		while(buffer.hasRemaining()){
 		    SCothers.write(buffer);//write buffer to all active connections
@@ -128,7 +151,7 @@ public class Server
 		//you have to rewind the buffer so that it can be used again
 		buffer.rewind();
 	    }
-	}
+	}*/
 	return true;
     }
 }
