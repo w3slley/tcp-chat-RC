@@ -19,15 +19,18 @@ class Room implements Comparable<Room>{
         users.add(u);
     }
 
+    boolean isEmpty(){
+        return users.size()==0;
+    }
+
     //Comparisons between rooms are made based on their name (there cannot be two different rooms with the same name)
     public int compareTo(Room r){
         return this.roomName.compareTo(r.roomName);
     }
 
     public String toString(){
-        return users+"";
+        return roomName+ ": "+users;
     }
-
 }
 
 
@@ -55,7 +58,10 @@ class User implements Comparable<User>{
 
     void setNickname(String n){
         this.nickname = n.split("\n")[0];
-        this.currState = states[1];//when user inserts username, the default state is "init"
+
+        //When user is not on a chat room, change the state from init to outside. If user is already in a room, don't change states
+        if(!currState.equals("inside"))
+            this.currState = states[1];
     }
 
     void setRoom(Room r){
@@ -110,7 +116,7 @@ class Chat{
                 if(r.compareTo(room)==0){//If found the room
                     r.addUser(user); //Add user to it
                     user.chatRoom = r; //Update user chatRoom attribute with current room
-                    notifyMembers(user, r);
+                    notifyMembers(user, r, "JOIN");
                     break;
                 }
             }
@@ -120,13 +126,44 @@ class Chat{
         
     }
 
+    void removeUserFromRoom(User user, Room room) throws IOException{
+        //remove user from room
+        room.users.remove(user);
+
+        //If room is empty, delete it from the global list of rooms
+        if(room.isEmpty()) 
+            this.rooms.remove(user.chatRoom);
+        else //else, notify members that user left 
+            notifyMembers(user, room, "LEFT");
+        
+        //delete room attribute on user object
+        user.setRoom(null);
+    }
+
     //Method that notifies current members of a chatroom the fact a new user just entered the room
-    private void notifyMembers(User user, Room room) throws IOException{
+    private void notifyMembers(User user, Room room, String action) throws IOException{
         ByteBuffer buffer = ByteBuffer.allocate( 16384 );
-        for(User u : room.users){
-            String message = "JOINED "+user+"\n";
-            this.sendMessageToClient(message, buffer, u.socketChannel);
-        }
+        String message = "";
+        if(action.equals("JOIN"))
+            message = "JOINED "+user+"\n";
+        else if (action.equals("LEFT"))
+            message = "LEFT "+user+"\n";
+
+        //Send message to all users but the one who joined/left the chat room
+        for(User u : room.users)
+            if(u.compareTo(user)!=0)
+                this.sendMessageToClient(message, buffer, u.socketChannel);
+        
+    }
+
+    void notifyChangeNickname(User user, Room room, String oldNickname, String newNickname) throws IOException{
+        ByteBuffer buffer = ByteBuffer.allocate( 16384 );
+        String message = "NEWNICK "+oldNickname+" "+newNickname+"\n";
+        
+        //Send message to all users but the one who made the change
+        for(User u : room.users)
+            if(u.compareTo(user)!=0)
+                this.sendMessageToClient(message, buffer, u.socketChannel);
     }
 
     //Method that sends message from the server to the client using the given buffer
@@ -163,7 +200,7 @@ public class ChatServer {
           ChatServer server = new ChatServer();
           server.start();
         } catch(IOException e) {
-           System.err.println("Erro durante execução do servidor: " + e.getMessage());
+           System.err.println("Server Error: " + e.getMessage());
         }
      
     }
@@ -211,11 +248,11 @@ public class ChatServer {
 
              /*Se o evento foi cancelado ou a conexão fechada, a selectionKey fica inválida
              e assim não será processada.*/
-             if (!selectionKey.isValid()) {
+             /*if (!selectionKey.isValid()) {
                 //SocketChannel clientChannel = (SocketChannel) selectionKey.channel();
                  System.out.println("Client "+selectionKey.attachment()+" disconnected!");
                  continue;
-             }
+             }*/
              if (selectionKey.isAcceptable()) {
                  processAcceptable(selectionKey);
              } 
@@ -281,28 +318,39 @@ public class ChatServer {
             String[] fields = command.split(" ");
             String response = "";
             
-            if(command.charAt(0)!='/' && user.currState == "init"){
-                response = "It is not possible to write messages if you haven't choosen a nickname yet! \n";
+            if(command.charAt(0)!='/' && user.currState.equals("init")){
+                response = "It is not possible to write messages if you haven't choosen a nickname yet!\n";
             }
-            else if(command.charAt(0)!='/' && user.currState == "outside"){
-                response = "You are not inside a chat room! \n";
+            else if(command.charAt(0)!='/' && user.currState.equals("outside")){
+                response = "You are not inside a chat room!\n";
             }
             else{
                 if(command.charAt(0)=='/'){//that means user is sending commands
                     switch(fields[0]){
                         case "/nick":
+                            //if user is already inside a chat room, alert all other users of the change in nickname
+                            if(user.currState.equals("inside"))
+                                chat.notifyChangeNickname(user, user.chatRoom, user.nickname, fields[1]);
+                                
                             //response is OK
-                            response = "OK - Your nickname has been set. \n";
+                            response = "OK\n";
+                            
                             //attach nickname to connection
                             user.setNickname(fields[1]);
+
                             //add user to global variable users after they choose username
                             chat.users.add(user);
+
                             break;
                         case "/join":
                             //if user doesn't have a nickname and tries to create a room, return error
-                            if(user.currState == "init"){
-                                response = "ERROR - You cannot enter a room without inserting a nickname! \n";
+                            if(user.currState.equals("init")){
+                                response = "ERROR\n";
                                 break;
+                            }
+                            
+                            if(user.currState.equals("inside")){//if user is already in a room, get out of it first
+                                chat.removeUserFromRoom(user,user.chatRoom);
                             }
                     
                             //create room if doesn't exist and add user to it
@@ -310,12 +358,21 @@ public class ChatServer {
                             chat.addUserToRoom(user,room);
                             response = "User @"+user+" entered room #"+fields[1]+"\n";
                             break;
+
                         case "/leave":
+                            chat.removeUserFromRoom(user,user.chatRoom);
+                            
+                            //update user state from "inside" to "outside" (I have to create a method inside the User class which is only responsible to change the user state)
+                            user.currState = user.states[1];
+                            
+                            //sending OK response to client
+                            response = "OK\n";
+
                             break;
                         case "/bye":
                             break;
                         default:
-                            response = "Error - Not a valid command. \n"; 
+                            response = "ERROR\n"; 
                     }
                 }
                 else{ //otherwise, user is sending message inside a chatroom
@@ -328,7 +385,9 @@ public class ChatServer {
                     }
                 }
             }
-            
+
+            System.out.println(chat.rooms);
+
             //In the end, send the server response to client
             chat.sendMessageToClient(response,buffer,clientChannel);
     
