@@ -19,7 +19,7 @@ public class ChatClient {
 
 
 
-    
+
     // Método a usar para acrescentar uma string à caixa de texto
     // * NÃO MODIFICAR *
     public void printMessage(final String message) {
@@ -38,7 +38,7 @@ public class ChatClient {
         frame.setLayout(new BorderLayout());
         frame.add(panel, BorderLayout.SOUTH);
         frame.add(new JScrollPane(chatArea), BorderLayout.CENTER);
-        frame.setSize(500, 300);
+        frame.setSize(600, 400);
         frame.setVisible(true);
         chatArea.setEditable(false);
         chatBox.setEditable(true);
@@ -47,8 +47,10 @@ public class ChatClient {
             public void actionPerformed(ActionEvent e) {
                 try {
                     newMessage(chatBox.getText());
-                } catch (IOException ex) {
-                } finally {
+                }
+		catch (IOException ex) {
+                }
+		finally {
                     chatBox.setText("");
                 }
             }
@@ -63,24 +65,23 @@ public class ChatClient {
         // Se for necessário adicionar código de inicialização ao
         // construtor, deve ser colocado aqui
 
-
-
-    }
-
+    }	
 
     // Método invocado sempre que o utilizador insere uma mensagem
     // na caixa de entrada
     public void newMessage(String message) throws IOException {
-        // PREENCHER AQUI com código que envia a mensagem ao servidor
-
-
+	// PREENCHER AQUI com código que envia a mensagem ao servidor
+	System.out.println(message);
+      
+	//creates client socket at port 6789
+	//clientSocket = new Socket("localhost", 8000);
 
     }
 
     
     // Método principal do objecto
     public void run() throws IOException {
-        // PREENCHER AQUI
+	    // PREENCHER AQUI
 
 
 
