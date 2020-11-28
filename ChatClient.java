@@ -11,7 +11,7 @@ import java.nio.*;
 import java.nio.channels.*;
 import java.util.*;
 
-public class ChatClient implements Runnable{
+public class ChatClient {
 
     // Variáveis relacionadas com a interface gráfica --- * NÃO MODIFICAR *
     JFrame frame = new JFrame("Chat Client");
@@ -21,7 +21,6 @@ public class ChatClient implements Runnable{
 
     // Se for necessário adicionar variáveis ao objecto ChatClient, devem
     // ser colocadas aqui
-    private final Scanner scanner;
     private final Selector selector;
     private final SocketChannel clientChannel;
     private final ByteBuffer buffer = ByteBuffer.allocateDirect(1024);
@@ -78,25 +77,23 @@ public class ChatClient implements Runnable{
         //clientChannel.register(selector, SelectionKey.OP_CONNECT | SelectionKey.OP_READ | SelectionKey.OP_WRITE);
         clientChannel.register(selector, clientChannel.validOps());
 
-        scanner = new Scanner(System.in);
-
-
     }
 
 
     // Método invocado sempre que o utilizador insere uma mensagem
     // na caixa de entrada
     public void newMessage(String message) throws IOException {
-
-
+      if(clientChannel.isConnectionPending()) {
+          clientChannel.finishConnect();
+      }
+      clientChannel.write(ByteBuffer.wrap(message.getBytes()));
     }
 
     // Entra no loop de envio de mensagens pro servidor.
-    private void sendMessageLoop() throws IOException {
-         String msg;
+    private void sendMessageLoop(message) throws IOException {
          do {
-             System.out.print("Digite uma mensagem (ou sair para finalizar): ");
-             msg = scanner.nextLine();
+             //System.out.print("Digite uma mensagem (ou sair para finalizar): ");
+             //msg = scanner.nextLine();
              clientChannel.write(ByteBuffer.wrap(msg.getBytes()));
          }while(!msg.equalsIgnoreCase("sair"));
     }
@@ -114,24 +111,8 @@ public class ChatClient implements Runnable{
         if (bytesRead > 0) {
             byte data[] = new byte[bytesRead];
             buffer.get(data);
-            System.out.println(
-                    "Mensagem recebida do servidor: " + new String(data));
+            System.out.println("Mensagem recebida do servidor: " + new String(data));
         }
-    }
-
-    /*
-     * Processa a aceitação da conexão do cliente pelo servidor,
-     * que indica que o cliente conectou com sucesso.
-     * @throws IOException
-     */
-    private void processConnectionAccept() throws IOException {
-        System.out.println("Cliente conectado ao servidor");
-        if(clientChannel.isConnectionPending()) {
-            clientChannel.finishConnect();
-        }
-        System.out.print("Digite seu login: ");
-        String login = scanner.nextLine();
-        clientChannel.write(ByteBuffer.wrap(login.getBytes()));
     }
 
     /*
@@ -158,19 +139,18 @@ public class ChatClient implements Runnable{
 
     // Método principal do objecto
     // Inicia o processo de espera pela conexão com o servidor e envio e recebimento de mensagens.
-    @Override
+    //@Override
     public void run() throws IOException {
       try {
           /* Espera pelo primeiro evento, que só pode ser indicando o sucesso da conexão.
           *  O método bloqueia até uma resposta ser obtida ou timeout ocorrer
           *  após 1 segundo. */
           selector.select(1000);
-          processConnectionAccept();
 
           /* Cria um novo thread para ficar aguardando mensagens enviadas pelo servidor,
            *  paralelamente ao envio de mensagens.
            */
-          new Thread(this).run();
+          //new Thread(this).run();
           sendMessageLoop();
       }finally{
           clientChannel.close();
