@@ -280,7 +280,7 @@ class User implements Comparable<User>{
                 
                 // If user is sending a message starting with / and it's not a command, then the '/' must be escaped in the client and sent to the server. For example, if user 'test' inside a room 'abc' sends a message "//commmand", the client sees this, doesn't recognizes it as a valid command and adds a '/' in the beginning, sending the message to the server. Then the server sees perceives the escaping the removes the first "/" of the message and then sends it to the client as "/command"!
                 if(currState.equals("inside") && command.charAt(1)=='/'){//user is inside a chat room and the command was escaped by the client
-                    String message = command.substring(1,command.length())+"\n";//escaping / character
+                    String message = "MESSAGE "+nickname+" "+command.substring(1,command.length())+"\n";//escaping / character
 
                     for(User u : chatRoom.users){//sending message to all users in the chat room
                         chat.sendMessageToClient(message,chat.buffer,u.socketChannel);
