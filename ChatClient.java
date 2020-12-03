@@ -17,9 +17,9 @@ public class ChatClient {
     JFrame frame = new JFrame("Chat Client");
     private JTextField chatBox = new JTextField();
     private JTextArea chatArea = new JTextArea();
-    // --- Fim das variÃ¡veis relacionadas coma interface grÃ¡fica
+    // --- Fim das variaveis relacionadas coma interface grÃ¡fica
 
-    // Se for necessario adicionar variÃ¡veis ao objecto ChatClient, devem
+    // Se for necessario adicionar variaveis ao objecto ChatClient, devem
     // ser colocadas aqui
     private final SocketChannel sc;
     private final CharsetDecoder decoder;
@@ -40,7 +40,7 @@ public class ChatClient {
                 cmd = slm.next();
 
                 if (cmd.equals("/nick")) {
-                    str = "Name: " + slm.next() + "\".\n";
+                    str = "User: " + slm.next() + "\n";
                 }
                 else if (cmd.equals("/join")) {
                     str = "Joined room: \"" + slm.next() + "\".\n";
@@ -51,9 +51,9 @@ public class ChatClient {
                 /*else if (cmd.equals("/priv")) {
                     str = "(Mensagem privada para) " + slm.next() + ": " + slm.nextLine() + "\n";
                 } */
-                else {
-                    str = "OK\n";
-                }
+                /*else {
+                    str = "";
+                } */
                 slm.close();
                 chatArea.append(str);
             }
@@ -128,7 +128,7 @@ public class ChatClient {
     // Construtor
     public ChatClient(String server, int port) throws IOException {
 
-        // InicializaÃ§Ã£o da interface grÃ¡fica --- * NÃƒO MODIFICAR *
+        // Inicializaçao da interface grafica --- * NAO MODIFICAR *
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         JPanel panel = new JPanel();
         panel.setLayout(new BorderLayout());
@@ -156,15 +156,15 @@ public class ChatClient {
         sc.configureBlocking(true);
         decoder = Charset.forName("UTF8").newDecoder();
 
-        // --- Fim da inicializaÃ§Ã£o da interface grÃ¡fica
+        // --- Fim da inicializaÃ§Ã£o da interface grafica
 
-        // Se for necessÃ¡rio adicionar cÃ³digo de inicializaÃ§Ã£o ao
+        // Se for necessÃ¡rio adicionar codigo de inicializaçao ao
         // construtor, deve ser colocado aqui
         Umessage = null;
     }
 
 
-    // MÃ©todo invocado sempre que o utilizador insere uma mensagem
+    // Metodo invocado sempre que o utilizador insere uma mensagem
     // na caixa de entrada
     public void newMessage(String message) throws IOException {
         // PREENCHER AQUI com cÃ³digo que envia a mensagem ao servidor
@@ -185,7 +185,7 @@ public class ChatClient {
     }
 
 
-    // MÃ©todo principal do objecto
+    // Metodo principal do objecto
     public void run() throws IOException {
         // PREENCHER AQUI
         ByteBuffer buffer = ByteBuffer.allocate(16384);
@@ -216,7 +216,7 @@ public class ChatClient {
 
 
     // Instancia o ChatClient e arranca-o invocando o seu mÃ©todo run()
-    // * NÃƒO MODIFICAR *
+    // * NAO MODIFICAR *
     public static void main(String[] args) throws IOException {
         ChatClient client = new ChatClient(args[0], Integer.parseInt(args[1]));
         client.run();
