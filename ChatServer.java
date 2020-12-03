@@ -5,9 +5,309 @@ import java.nio.channels.*;
 import java.nio.charset.*;
 import java.util.*;
 
+class Chat{
+    //Room TreeSet containing all the rooms in the chat
+    TreeSet<Room> rooms = new TreeSet<>();
+    //User Treeset containting all users connected to the chat (for username verification O(log(n)))
+    TreeSet<User> users = new TreeSet<>();
+
+    ByteBuffer buffer;
+
+    Chat(){
+        this.rooms = new TreeSet<Room>();
+        this.users = new TreeSet<User>();
+        // A pre-allocated buffer for the received data
+        buffer = ByteBuffer.allocate( 16384 );
+    }
+
+    boolean containsNickname(String n){
+        return users.contains(new User(n));
+    }
+
+    void addUserToRoom(User user, Room room) throws IOException{
+        if(this.rooms.contains(room) == false){
+            room.addUser(user); //Add user to room
+            user.chatRoom = room; //Setting user chatroom to the current room
+            this.rooms.add(room); //Add chatroom to global variable rooms
+        }
+        else{
+            //Loop through all rooms, find the one the user wants to enter and add them to it
+            for(Room r : rooms){
+                if(r.compareTo(room)==0){//If found the room
+                    r.addUser(user); //Add user to it
+                    user.chatRoom = r; //Update user chatRoom attribute with current room
+                    notifyMembers(user, r, "JOIN");
+                    break;
+                }
+            }
+        }
+        //Change user state to "inside"
+        user.currState = user.states[2];
+
+    }
+
+    void removeUserFromRoom(User user, Room room) throws IOException{
+        //remove user from room
+        room.users.remove(user);
+
+        //If room is empty, delete it from the global list of rooms
+        if(room.isEmpty())
+            this.rooms.remove(user.chatRoom);
+        else //else, notify members that user left
+            notifyMembers(user, room, "LEFT");
+
+        //delete room attribute on user object
+        user.setRoom(null);
+    }
+
+    void removeUserFromChat(User user){
+        this.users.remove(user);
+    }
+
+    //Method that notifies current members of a chatroom the fact a new user just entered the room
+    private void notifyMembers(User user, Room room, String action) throws IOException{
+        ByteBuffer buffer = ByteBuffer.allocate( 16384 );
+        String message = "";
+        if(action.equals("JOIN"))
+            message = "JOINED "+user+"\n";
+        else if (action.equals("LEFT"))
+            message = "LEFT "+user+"\n";
+
+        //Send message to all users but the one who joined/left the chat room
+        for(User u : room.users)
+            if(u.compareTo(user)!=0)
+                this.sendMessageToClient(message, buffer, u.socketChannel);
+
+    }
+
+    void notifyChangeNickname(User user, Room room, String oldNickname, String newNickname) throws IOException{
+        ByteBuffer buffer = ByteBuffer.allocate( 16384 );
+        String message = "NEWNICK "+oldNickname+" "+newNickname+"\n";
+
+        //Send message to all users but the one who made the change
+        for(User u : room.users)
+            if(u.compareTo(user)!=0)
+                this.sendMessageToClient(message, buffer, u.socketChannel);
+    }
+
+    //Method that sends message from the server to the client using the given buffer
+    void sendMessageToClient(String message, ByteBuffer buffer, SocketChannel clientChannel) throws IOException{
+        buffer.clear();
+        buffer.put(message.getBytes());
+        buffer.flip();
+
+        while(buffer.hasRemaining()) {
+            clientChannel.write(buffer);
+        }
+    }
+}
+
+class Room implements Comparable<Room>{
+    ArrayList<User> users; //List of users who are in the chat room
+    String roomName; //Unique String identifier of a room (used for comparison)
+
+    Room(String n){
+        this.roomName = n;
+        users = new ArrayList<User>();
+    }
+
+    //Adding User into the room
+    void addUser(User u){
+        users.add(u);
+    }
+
+    boolean isEmpty(){
+        return users.size()==0;
+    }
+
+    //Comparisons between rooms are made based on their name (there cannot be two different rooms with the same name)
+    public int compareTo(Room r){
+        return this.roomName.compareTo(r.roomName);
+    }
+
+    public String toString(){
+        return roomName+ ": "+users;
+    }
+}
+
+
+class User implements Comparable<User>{
+    String nickname; //User chosen nickname
+    String[] states = {"init", "outside", "inside"}; //3 possible states user can be
+    String currState; //State the user is currently on
+    String partialCommand; //String with partial commands from the user
+    Queue<String> commands;//Queue with valid and complete commands from user
+    SocketChannel socketChannel;//Socket channel that identifies user
+    Room chatRoom; //Chat room in which the user is currently on (if the user in not in any room, this is null)
+
+    //Strictly for searching for users with nickname n
+    User(String n){
+        this.nickname = n;
+    }
+
+    User(SocketChannel c){
+        this.socketChannel = c;
+        this.chatRoom = null;
+        this.currState = states[0];
+        partialCommand = "";
+        commands = new LinkedList<String>();
+    }
+
+    void setNickname(String n){
+        this.nickname = n.split("\n")[0];
+
+        //When user is not on a chat room, change the state from init to outside. If user is already in a room, don't change states
+        if(!currState.equals("inside"))
+            this.currState = states[1];
+    }
+
+    void setRoom(Room r){
+        this.chatRoom = r;
+    }
+
+    void processClientMessage(String m){
+        if(m.equals("\n"))//If user only sent break line char, do nothing
+            return;
+
+        for(int i=0;i<m.length();i++){
+            char c = m.charAt(i);
+            if(c == '\n'){
+                if(!partialCommand.equals(""))
+                    commands.add(partialCommand);
+                    partialCommand = "";
+            }
+            else
+            partialCommand += c;
+        }
+    }
+
+    void executeCommands(Chat chat) throws IOException{
+        //loop through commands queue and process all valid commands
+        while(!commands.isEmpty()){
+            String command = commands.poll();//get first value on queue
+            String response = "";
+            if(command.charAt(0)!='/' && currState.equals("init")){
+                response = "ERROR - Trying to send message without username\n";
+            }
+            else if(command.charAt(0)!='/' && currState.equals("outside")){
+                response = "ERROR - Trying to send message outside of chat room\n";
+            }
+            else{
+                if(command.charAt(0)=='/'){//that means user is sending commands
+                    response = processCommand(chat, command);
+                }
+                else{ //otherwise, user is sending message inside a chatroom
+                    //loop through all users in the room and write to their socket channel the message
+                    String message = "MESSAGE "+nickname+" "+command+"\n"; //user message
+
+                    for(User u : chatRoom.users){
+                        chat.sendMessageToClient(message,chat.buffer,u.socketChannel);
+                    }
+                }
+            }
+
+            //In the end, send the server response to client if user is not null
+            chat.sendMessageToClient(response,chat.buffer,socketChannel);
+
+            if(socketChannel != null){
+                System.out.println("Message received from user " + socketChannel.getRemoteAddress()+" ("+nickname+")");
+                chat.buffer.clear();
+            }
+        }
+    }
+
+    private String processCommand(Chat chat, String command) throws IOException{
+        String[] fields = command.split(" ");
+        String response="";
+        switch(fields[0]){
+            case "/nick":
+                if(chat.users.contains(new User(fields[1]))){
+                    response = "ERROR - Nickname not available\n";
+                }
+                else{
+                    //if user is already inside a chat room, alert all other users of the change in nickname
+                    if(currState.equals("inside"))
+                    chat.notifyChangeNickname(this, chatRoom, nickname, fields[1]);
+
+                    //response is OK
+                    response = "OK\n";
+
+                    //attach nickname to connection
+                    setNickname(fields[1]);
+
+                    //add user to global variable users after they choose username
+                    chat.users.add(this);
+                }
+
+                break;
+            case "/join":
+                //if user doesn't have a nickname and tries to create a room, return error
+                if(currState.equals("init")){
+                    response = "ERROR - You have to have a nickname to enter a chatroom\n";
+                    break;
+                }
+
+                if(currState.equals("inside")){//if user is already in a room and want to join another, get out of the one he/she is at first
+                    chat.removeUserFromRoom(this,chatRoom);
+                }
+
+                //create room if it doesn't exist and add user to it
+                Room room = new Room(fields[1]);
+                chat.addUserToRoom(this,room);
+                response = "OK\n";
+                break;
+
+            case "/leave":
+                chat.removeUserFromRoom(this,chatRoom);
+
+                //update user state from "inside" to "outside" (I have to create a method inside the User class which is only responsible to change the user state)
+                currState = states[1];
+
+                //sending OK response to client
+                response = "OK\n";
+
+                break;
+            case "/bye":
+                if(currState.equals("inside"))
+                    chat.removeUserFromRoom(this,chatRoom);//remove user from curr room
+                chat.removeUserFromChat(this); //remove user from users list
+                chat.sendMessageToClient("BYE\n", chat.buffer,socketChannel);//send BYE message
+                socketChannel.close();//server closes connection
+                System.out.println("User" + socketChannel.getRemoteAddress()+"("+nickname+") has disconnected.");
+                socketChannel = null;//removing socketChannel for the user who left the chat
+                break;
+            default:
+                //if user is sending a message starting with / and it's not a command, then the '/' must be escaped and processed as a message
+                if(currState.equals("inside")){//user is inside a chat room and / has to be escaped
+                    String message = "/"+command+"\n";//escaping / character
+                    //System.out.println(message+ " "+ chatRoom.users);
+                    for(User u : chatRoom.users){//sending message to all users in the chat room
+                        chat.sendMessageToClient(message,chat.buffer,u.socketChannel);
+                    }
+                    response = "OK\n";
+                }
+                else{
+                    response = "ERROR - Non-existing command\n";//user is tryint to use non-existing command
+                }
+        }
+        return response;
+      }
+
+    public int compareTo(User u){
+        return this.nickname.compareTo(u.nickname);
+    }
+
+    public String toString(){
+	    return nickname;
+    }
+}
+
+
+
 public class ChatServer {
-    // A pre-allocated buffer for the received data
-    static private  ByteBuffer buffer;
+    //global variable chat containing properties and methods for functionalities in the chat (verifying if nickname can be used, removing empty rooms, etc)
+    static Chat chat = new Chat();
+
     // Decoder for incoming text -- assume UTF-8
     static private final Charset charset = Charset.forName("UTF8");
     static private final CharsetDecoder decoder = charset.newDecoder();
@@ -17,7 +317,6 @@ public class ChatServer {
 
     private static int PORT;
 
-
     static public void main(String args[]) throws Exception {
       	// Parse port from command line
       	PORT = Integer.parseInt( args[0] );
@@ -25,98 +324,12 @@ public class ChatServer {
           ChatServer server = new ChatServer();
           server.start();
         } catch(IOException e) {
-           System.err.println("Erro durante execução do servidor: " + e.getMessage());
+           System.err.println("Server Error: " + e.getMessage());
         }
-      /*	try {
-    	    // Instead of creating a ServerSocket, create a ServerSocketChannel
-    	   ssc = ServerSocketChannel.open();
-    	    // Set it to non-blocking, so we can use select
-    	    ssc.configureBlocking( false );
-    	    // Get the Socket connected to this channel, and bind it to the
-    	    // listening port
-    	    ServerSocket ss = ssc.socket();
-    	    InetSocketAddress isa = new InetSocketAddress( port );
-    	    ss.bind( isa );
-    	    // Create a new Selector for selecting
-    	    Selector selector = Selector.open();
 
-    	    // Register the ServerSocketChannel, so we can listen for incoming
-    	    // connections
-    	    ssc.register( selector, SelectionKey.OP_ACCEPT );
-    	    System.out.println( "Listening on port "+port );
-    	    while (true) {
-    		// See if we've had any activity -- either an incoming connection,
-    		// or incoming data on an existing connection
-    		int num = selector.select();
-    		// If we don't have any activity, loop around and wait again
-    		if (num == 0)
-    		    continue;
-    		// Get the keys corresponding to the activity that has been
-    		// detected, and process them one by one
-    		Set<SelectionKey> keys = selector.selectedKeys();
-    		Iterator<SelectionKey> it = keys.iterator();
-    		while (it.hasNext()) {
-    		    // Get a key representing one of bits of I/O activity
-    		    SelectionKey key = it.next();
-    		    // What kind of activity is it?
-    		    if (key.isAcceptable()) {
-    			// It's an incoming connection.  Register this socket with
-    			// the Selector so we can listen for input on it
-    			Socket s = ss.accept();
-    			System.out.println( "Got connection from "+s );
-    			// Make sure to make it non-blocking, so we can use a selector
-    			// on it.
-    			SocketChannel sc = s.getChannel();
-    			sc.configureBlocking( false );
-    			//attaching nickname to user (next modification will be this)
-    			//Nickname n = new Nickname("test");
-    			//key.attach(n);
-
-    			// Register it with the selector, for reading
-    			sc.register( selector, SelectionKey.OP_READ );
-    		    } else if (key.isReadable()) {
-    			SocketChannel sc = null;
-    			try {
-    			    // It's incoming data on a connection -- process it
-    			    sc = (SocketChannel) key.channel();
-    			    //Distribute message to all other connection sockets
-    			    boolean ok = processInput(selector, sc);
-    			    // If the connection is dead, remove it from the selector
-    			    // and close it
-    			    if (!ok) {
-    				key.cancel();
-    				Socket s = null;
-    				try {
-    				    s = sc.socket();
-    				    System.out.println( "Closing connection to "+s );
-    				    s.close();
-    				} catch( IOException ie ) {
-    				    System.err.println( "Error closing socket "+s+": "+ie );
-    				}
-    			    }
-
-    			} catch( IOException ie ) {
-    			    // On exception, remove this channel from the selector
-    			    key.cancel();
-    			    try {
-    				sc.close();
-    			    } catch( IOException ie2 ) { System.out.println( ie2 ); }
-    			    System.out.println( "Closed "+sc );
-    			}
-    		    }
-    		}
-    		// We remove the selected keys, because we've dealt with them.
-    		keys.clear();
-    	    }
-    	} catch( IOException ie ) {
-    	   System.err.println( ie );
-    	} */
     }
 
     public ChatServer() throws IOException {
-      // Cria um buffer de um tamanho definido (em total de bytes)
-      buffer = ByteBuffer.allocate( 16384 );
-
       selector = Selector.open();
       serverChannel = ServerSocketChannel.open();
       serverChannel.configureBlocking(false);
@@ -133,150 +346,88 @@ public class ChatServer {
     }
 
     public void start() {
-       while(true) {
-           try {
-              selector.select();
-               processEvents(selector.selectedKeys());
-             } catch(IOException e) {
-                 System.err.println(e.getMessage());
-             }
-         }
-     }
+        System.out.println( "Listening on port "+PORT );
+        while(true) {
+            try {
+                selector.select();
+                processEvents(selector.selectedKeys());
+            }
+            catch(IOException e) {
+                    System.err.println(e.getMessage());
+            }
+        }
+    }
 
      private void processEvents(Set<SelectionKey> selectionKeys) throws IOException {
          Iterator<SelectionKey> iterator = selectionKeys.iterator();
          while (iterator.hasNext()) {
              //Obtém o evento a ser processado
              SelectionKey selectionKey = iterator.next();
+
              /*Remove a SelectionKey da lista para indicar que
               um evento da mesma foi processado*/
              iterator.remove();
+
              /*Se o evento foi cancelado ou a conexão fechada, a selectionKey fica inválida
              e assim não será processada.*/
-             if (!selectionKey.isValid()) {
+             /*if (!selectionKey.isValid()) {
+                //SocketChannel clientChannel = (SocketChannel) selectionKey.channel();
+                 System.out.println("Client "+selectionKey.attachment()+" disconnected!");
                  continue;
-             }
+             }*/
              if (selectionKey.isAcceptable()) {
-                 processConnectionAccept();
-             } else if (selectionKey.isReadable()) {
-                 processRead(selectionKey);
+                 processAcceptable(selectionKey);
+             }
+             else if (selectionKey.isReadable()) {
+                 processReadable(selectionKey);
              }
          }
      }
 
-     private void processConnectionAccept() throws IOException {
+     private void processAcceptable(SelectionKey selectionKey) throws IOException {
         SocketChannel clientChannel = serverChannel.accept();
         System.out.println("Cliente " + clientChannel.getRemoteAddress() + " conectado.");
 
         clientChannel.configureBlocking(false);
         /*A operação só bloqueia se tiver outro thread gravando no mesmo canal.
         * Como não temos vários threads no servidor, então não teremos tal situação.*/
-        clientChannel.write(ByteBuffer.wrap("Bem vindo ao chat.\n".getBytes()));
+        clientChannel.write(ByteBuffer.wrap("Welcome to the Chat.\n".getBytes()));
 
         /*Registra o canal para ser monitorarado pelo selector quando
         dados enviados pelo cliente estiverem disponíveis para serem lidos*/
         clientChannel.register(selector, SelectionKey.OP_READ);
      }
 
-     private void processRead(SelectionKey selectionKey) throws IOException {
+     private void processReadable(SelectionKey selectionKey) throws IOException {
         SocketChannel clientChannel = (SocketChannel) selectionKey.channel();
-        buffer.clear();
-
+        chat.buffer.clear();
         //Armazena o total de bytes da mensagem recebida do cliente
         int bytesRead;
         try {
-            //Recebe (lê) uma mensagem do cliente e armazena dentro do buffer
-            bytesRead = clientChannel.read(buffer);
-        } catch (IOException e) {
-            System.err.println(
-                    "Não pode ler dados. Conexão fechada pelo cliente " +
-                    clientChannel.getRemoteAddress() + ": " + e.getMessage());
+            //Reads message from client and adds it to buffer
+            bytesRead = clientChannel.read(chat.buffer);
+        }
+        catch (IOException e) {
+            System.err.println("Couldn't read data. Connection closed by client " + clientChannel.getRemoteAddress() + ": " + e.getMessage());
             clientChannel.close();
             selectionKey.cancel();
             return;
         }
+        if(bytesRead <= 0) return;
+        chat.buffer.flip();
 
-        if(bytesRead <= 0){
-            return;
+        //adding User object into key attachment to distinguish users from each other
+        if(selectionKey.attachment()==null){
+            selectionKey.attach(new User(clientChannel));
         }
-        buffer.flip();
 
-        //Vetor que armazenará os dados lidos do buffer
-        byte[] data = new byte[bytesRead];
-      /*  String message = decoder.decode(buffer).toString();
-      	String[] ans = message.split(" ");
-        if(ans[0].equals("/nick")){
-      	    //mudar estado do cliente com nome  ans[1]
-      	    //enviar OK
-      	    //Improve this later
-      	    String response = "OK \n";
-            buffer.put(response.getBytes());
-          } */
-        buffer.get(data);
+        User user = (User) selectionKey.attachment();
+        String messageFromClient = decoder.decode(chat.buffer).toString();//decodes buffer and returns string
 
-        /*
-         * Como data é um vetor de bytes, mas nossa mensagem é uma String,
-         * precisamos converter tal vetor para String.
-         * Neste caso, basta chamar o construtor da classe String passando
-         * tal vetor por parâmetro.
-         */
-       System.out.println(
-            "Mensagem recebida do cliente " +
-            clientChannel.getRemoteAddress() + ": " + new String(data) +
-            " (" + bytesRead + " bytes lidos)"); 
-        buffer.clear();
+        //process user command from message from client
+        user.processClientMessage(messageFromClient);
+
+        //execute all valid commands
+        user.executeCommands(chat);
       }
-
-    // Just read the message from the socket and send it to stdout
-  /*  static private boolean processInput(Selector selector, SocketChannel sc ) throws IOException {
-      	Set<SelectionKey> keys = selector.keys(); //Selector.keys() returns all the active connections in the selector
-      	// Read the message to the buffer
-      	buffer.clear();
-      	sc.read( buffer );
-      	buffer.flip();
-      	// If no data, close the connection
-      	if (buffer.limit()==0)
-      	    return false;
-      	//loop through buffer and use the method SocketChannel.write() to send back buffer to connection who sent it.
-      	String message = decoder.decode(buffer).toString();
-      	String[] ans = message.split(" ");
-      	if(ans[0].equals("/nick")){
-      	    //mudar estado do cliente com nome  ans[1]
-      	    //enviar OK
-      	    //Improve this later
-      	    String response = "OK \n";
-      	    buffer.clear();
-      	    buffer.put(response.getBytes());
-      	    buffer.flip();
-
-      	    while(buffer.hasRemaining()) {
-      		sc.write(buffer);
-      	    }
-      	}
-      	else if(ans[0].equals("/join")){
-      	    //ans[1] is the name of the room.
-      	}
-      	else if(ans[0].equals("/bye")){
-
-        } */
-
-    	//loop through keys and send buffer only to active connections
-    	/*Iterator<SelectionKey> it = keys.iterator();
-    	while(it.hasNext()){
-    	    SelectionKey key = it.next();
-    	    if(!key.isAcceptable()){//only if the connection is not being established for the first time
-    		// Decode and print the message to stdout
-    		String message = decoder.decode(buffer).toString();
-    		String[] ans = message.split(" ");
-    		System.out.print(Arrays.toString(ans));
-    		SocketChannel SCothers = (SocketChannel) key.channel();
-    		while(buffer.hasRemaining()){
-    		    SCothers.write(buffer);//write buffer to all active connections
-    		}
-    		//you have to rewind the buffer so that it can be used again
-    		buffer.rewind();
-    	    }
-    	}
-    	return true;
-    } */
 }
