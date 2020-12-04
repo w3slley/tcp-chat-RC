@@ -187,10 +187,10 @@ class User implements Comparable<User>{
             String command = commands.poll();//get first value on queue
             String response = "";
             if(command.charAt(0)!='/' && currState.equals("init")){
-                response = "ERROR - Trying to send message without username\n";
+                response = "ERROR\n";
             }
             else if(command.charAt(0)!='/' && currState.equals("outside")){
-                response = "ERROR - Trying to send message outside of chat room\n";
+                response = "ERROR\n";
             }
             else{
                 if(command.charAt(0)=='/'){//that means user is sending commands
@@ -220,9 +220,31 @@ class User implements Comparable<User>{
         String[] fields = command.split(" ");
         String response="";
         switch(fields[0]){
+            case "/priv":
+                User receiver = new User(fields[1]);
+                if(chat.users.contains(receiver) && receiver.compareTo(this)!=0){
+                    String message = "";
+                    for(int i=2;i<fields.length;i++){
+                        if(i==fields.length-1) message+=fields[i];
+                        else message+=fields[i]+" ";
+                    }
+                    for(User u : chat.users){//O(# rooms) - one could use a binary search here if there are a lot of users
+                        if(u.compareTo(receiver)==0){//if it found the user
+                            chat.sendMessageToClient("PRIVATE "+this.nickname+" "+message,chat.buffer,u.socketChannel);//send message to it
+                        }
+                    }
+                    //echo private message also for the user who sent it
+                    chat.sendMessageToClient("PRIVATE "+this.nickname+" "+message,chat.buffer,this.socketChannel);
+                }
+                else{
+                    response = "ERROR\n";
+                }
+                 
+                
+                break;
             case "/nick":
                 if(chat.users.contains(new User(fields[1]))){
-                    response = "ERROR - Nickname not available\n";
+                    response = "ERROR\n";
                 }
                 else{
                     //if user is already inside a chat room, alert all other users of the change in nickname
@@ -243,7 +265,7 @@ class User implements Comparable<User>{
             case "/join":
                 //if user doesn't have a nickname and tries to create a room, return error
                 if(currState.equals("init")){
-                    response = "ERROR - You have to have a nickname to enter a chatroom\n";
+                    response = "ERROR\n";
                     break;
                 }
                 
@@ -288,7 +310,7 @@ class User implements Comparable<User>{
                     response = "OK\n"; 
                 }
                 else{
-                    response = "ERROR - Non-existing command\n";//user is tryint to use non-existing command
+                    response = "ERROR\n";//user is tryint to use non-existing command
                 }
         }
         return response;

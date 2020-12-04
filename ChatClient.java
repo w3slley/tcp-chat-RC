@@ -61,21 +61,31 @@ public class ChatClient {
                 String str = "";
                 Scanner slm = new Scanner (Umessage);
                 cmd = slm.next();
-
+                
                 if (cmd.equals("/nick")) {
-                    str = "This nickname is already in use\n";
+                    str = "This nickname is already being used. Please choose another one!\n";
                 }
                 else if (cmd.equals("/leave")) {
-                    str = "Join a room\n";
+                    String room = slm.next();
+                    System.out.println(room);
+                    str = "You left the room "+room+"!\n";
                 }
-                /* else if (cmd.equals("/priv")) {
-                    str = "O destinatário escolhido não existe.\n";
-                } */
+                else if (cmd.equals("/priv")) {
+                    str = "The user you are trying to send a private message to does not exist!\n";
+                } 
                 else {
-                    str = "Choose a name and Join a room\n";
+                    str = "Choose a nickname and join a room!\n";
                 }
                 slm.close();
                 chatArea.append(str);
+            }
+            else if(temp.equals("PRIVATE")){
+                StringBuilder str = new StringBuilder();
+                str.append(s.next());
+                str.append(" (private) :");
+                str.append(s.nextLine());
+                str.append("\n");
+                chatArea.append(str.toString());
             }
             else if (temp.equals("MESSAGE")) {
                 StringBuilder str = new StringBuilder();
@@ -88,13 +98,13 @@ public class ChatClient {
             else if (temp.equals("JOINED")) {
                 StringBuilder str = new StringBuilder();
                 str.append("\"" + s.next() + "\"");
-                str.append(" joined room.\n");
+                str.append(" joined the room.\n");
                 chatArea.append(str.toString());
             }
             else if (temp.equals("NEWNICK")) {
                 StringBuilder str = new StringBuilder();
                 str.append("\"" + s.next() + "\"");
-                str.append(" new nickname: ");
+                str.append(" changed nickname to ");
                 str.append("\"" + s.next() + "\"");
                 str.append(".\n");
                 chatArea.append(str.toString());
@@ -102,16 +112,7 @@ public class ChatClient {
             else if (temp.equals("LEFT")) {
                 StringBuilder str = new StringBuilder();
                 str.append("\"" + s.next() + "\"");
-                str.append(" left room.\n");
-                chatArea.append(str.toString());
-            }
-            else if (temp.equals("PRIVATE")) {
-                StringBuilder str = new StringBuilder();
-                str.append("(Private) ");
-                str.append(s.next());
-                str.append(":");
-                str.append(s.nextLine());
-                str.append("\n");
+                str.append(" left room\n");
                 chatArea.append(str.toString());
             }
             else if (temp.equals("BYE")) {
